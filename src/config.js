@@ -47,10 +47,6 @@ function validateConfig() {
     );
   }
 
-  if (config.ALLOWED_SENDERS.length === 0) {
-    problems.push('ALLOWED_SENDERS belum diisi di file .env (minimal 1 nomor).');
-  }
-
   return problems;
 }
 

@@ -2,6 +2,7 @@
 
 const fs = require('fs/promises');
 const path = require('path');
+const { sanitizeFolder } = require('./save-mode');
 
 /**
  * Format Date -> "YYYY-MM-DD" berdasarkan waktu lokal mesin yang menjalankan bot.
@@ -36,6 +37,13 @@ function extensionFromMimetype(mimetype) {
     'image/gif': '.gif',
   };
   return map[mimetype] || '.jpg';
+}
+
+async function assertWithinRoot(root, directory) {
+  const relative = path.relative(root, await fs.realpath(directory));
+  if (relative === '..' || relative.startsWith(`..${path.sep}`) || path.isAbsolute(relative)) {
+    throw new Error('Folder tujuan berada di luar STORAGE_DIR.');
+  }
 }
 
 async function ensureDir(dirPath) {
@@ -75,20 +83,50 @@ async function nextAvailableFilename(dirPath, extension) {
 }
 
 /**
- * Download media dari message dan simpan ke storage/<YYYY-MM-DD>/image-NNN.ext
+ * Download media dari message dan simpan ke storage/<YYYY-MM-DD>/<activeFolder>/image-NNN.ext
  * Return path relatif file yang tersimpan (untuk logging), atau throw error
  * yang harus ditangkap oleh pemanggil (index.js) supaya tidak crash.
  */
-async function saveMessageMedia(message, config) {
-  const media = await message.downloadMedia();
+async function saveMessageMedia(message, config, activeFolder) {
+  // WA Web can expose the serialized ID as $1; wwebjs 1.34.7 still reads
+  // _serialized. Preserve the complete ID (including group participant suffix).
+  // https://github.com/wwebjs/whatsapp-web.js/issues/201830
+  const id = message.id;
+  if (!id?._serialized && typeof id?.$1 === 'string' && id.$1.length > 0) {
+    message.id = { ...id, _serialized: id.$1 };
+    console.log('Media compatibility: menggunakan ID $1 sebagai _serialized');
+  }
+
+  let media;
+  try {
+    if (typeof message.id?._serialized !== 'string' || !message.id._serialized) {
+      throw new Error('Serialized message ID tidak tersedia; download dibatalkan sebelum lookup browser.');
+    }
+    media = await message.downloadMedia();
+  } catch (cause) {
+    // Log only structural metadata, never media keys, payload, or credentials.
+    throw new Error(
+      `downloadMedia gagal (type=${message.type}, hasMedia=${message.hasMedia}, ` +
+      `serializedId=${Boolean(message.id?._serialized)}, aliasId=${typeof id?.$1 === 'string'}): ` +
+      `${cause?.message || String(cause)}`,
+      { cause }
+    );
+  }
 
   if (!media || !media.data) {
     throw new Error('downloadMedia() tidak mengembalikan data (media kosong/expired).');
   }
 
   const dateFolder = formatDateFolder(dateFromMessageTimestamp(message));
-  const targetDir = path.join(config.STORAGE_DIR, dateFolder);
+  const projectFolder = sanitizeFolder(activeFolder);
+  await ensureDir(config.STORAGE_DIR);
+  const root = await fs.realpath(config.STORAGE_DIR);
+  const dateDir = path.join(root, dateFolder);
+  await ensureDir(dateDir);
+  await assertWithinRoot(root, dateDir);
+  const targetDir = path.join(dateDir, projectFolder);
   await ensureDir(targetDir);
+  await assertWithinRoot(root, targetDir);
 
   const extension = extensionFromMimetype(media.mimetype);
   const filename = await nextAvailableFilename(targetDir, extension);
@@ -99,7 +137,7 @@ async function saveMessageMedia(message, config) {
   await fs.writeFile(targetPath, buffer, { flag: 'wx' });
 
   return {
-    relativePath: path.join('storage', dateFolder, filename),
+    relativePath: path.join('storage', dateFolder, projectFolder, filename),
     absolutePath: targetPath,
     bytes: buffer.length,
   };

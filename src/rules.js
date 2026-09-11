@@ -2,7 +2,7 @@
 
 /**
  * Rule engine sederhana untuk Phase 1.
- * Tidak pakai AI - murni pengecekan berbasis konfigurasi (whitelist group & sender).
+ * Tidak pakai AI - murni pengecekan berbasis konfigurasi (group & image).
  *
  * Hasil evaluasi selalu berbentuk:
  *   { allowed: boolean, reason: string, senderNumber: string|null }
@@ -20,7 +20,7 @@ function extractSenderId(message) {
 }
 
 function isFromConfiguredGroup(message, config) {
-  return message.from === config.GROUP_ID;
+  return Boolean(config.GROUP_ID) && message.from === config.GROUP_ID;
 }
 
 function isSenderAllowed(message, config) {
@@ -50,10 +50,6 @@ function evaluateMessage(message, config) {
 
   if (!isFromConfiguredGroup(message, config)) {
     return { allowed: false, reason: 'group_not_configured', senderNumber: senderId };
-  }
-
-  if (!isSenderAllowed(message, config)) {
-    return { allowed: false, reason: 'sender_not_allowed', senderNumber: senderId };
   }
 
   if (!hasImageMedia(message)) {

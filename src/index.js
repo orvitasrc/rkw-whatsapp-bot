@@ -2,7 +2,9 @@
 
 const { config, validateConfig } = require('./config');
 const { createClient } = require('./whatsapp');
-const { evaluateMessage } = require('./rules');
+const { evaluateMessage, isFromConfiguredGroup, extractSenderId } = require('./rules');
+const { createSaveMode } = require('./save-mode');
+const { handleCommand } = require('./commands');
 const { saveMessageMedia } = require('./media');
 
 function timestamp() {
@@ -101,6 +103,9 @@ async function handleDiscoveryMessage(message) {
   }
 }
 
+const saveMode = createSaveMode({ log });
+let saveQueue = Promise.resolve();
+
 async function handleIncomingMessage(message) {
   /*
    * Discovery mode:
@@ -119,50 +124,62 @@ async function handleIncomingMessage(message) {
 
   log('Message received');
 
-  const evaluation = evaluateMessage(message, config);
-
-  if (evaluation.senderNumber) {
-    log(`Sender: ${evaluation.senderNumber}`);
+  if (!isFromConfiguredGroup(message, config)) {
+    log('Message ignored: group not configured');
+    return;
   }
 
-  if (!evaluation.allowed) {
-    switch (evaluation.reason) {
-      case 'group_not_configured':
-        return;
+  saveMode.expire();
+  const sender = extractSenderId(message);
+  // A group ID is not a sender identity: never create a shared group mode.
+  if (!sender || sender.endsWith('@g.us')) {
+    log('Message ignored: sender identity unavailable');
+    return;
+  }
+  log(`Sender: ${sender}`);
 
-      case 'sender_not_allowed':
-        log(
-          'Message diabaikan: sender tidak termasuk ALLOWED_SENDERS'
-        );
-        return;
-
-      case 'no_image_media':
-        log(
-          'Message diabaikan: tidak ada media image sesuai rule'
-        );
-        return;
-
-      default:
-        log(
-          `Message diabaikan: ${
-            evaluation.reason || 'tidak memenuhi rule'
-          }`
-        );
-        return;
+  const response = handleCommand(message, sender, saveMode, log);
+  if (response !== null) {
+    try {
+      // Plain group response avoids quoting IDs and does not send read receipts.
+      const sent = await message.client.sendMessage(config.GROUP_ID, response, { sendSeen: false });
+      if (!sent) throw new Error('sendMessage tidak mengembalikan pesan');
+    } catch (err) {
+      logError('Gagal mengirim respons command', err);
     }
+    return;
   }
 
+  if (!evaluateMessage(message, config).allowed) {
+    log('Message ignored: no image media');
+    return;
+  }
+  const accepted = saveMode.acceptImage(sender);
+  if (!accepted) {
+    log('Image ignored: save mode inactive');
+    return;
+  }
+
+  if (!accepted.activeFolder) {
+    log('Image ignored: active folder not set');
+    return;
+  }
   log('Media detected: image');
+  log(`Save mode active: ${sender}`);
+  log(`Target folder: ${accepted.activeFolder}`);
 
-  try {
-    log('Downloading media...');
-
-    const result = await saveMessageMedia(message, config);
-
-    log(`Saved: ${result.relativePath}`);
-  } catch (err) {
-console.error('Gagal memproses media:', err);
-  }
+  // Serialize writes so a batch cannot select the same image-NNN filename.
+  saveQueue = saveQueue.then(async () => {
+    try {
+      log('Downloading media...');
+      const result = await saveMessageMedia(message, config, accepted.activeFolder);
+      log(`Saved: ${result.relativePath}`);
+      saveMode.refresh(sender, accepted);
+    } catch (err) {
+      console.error(`[${timestamp()}] Gagal memproses media:`, err);
+    }
+  });
+  await saveQueue;
 }
 
 async function main() {
@@ -199,10 +216,17 @@ async function main() {
   }
 
   const client = createClient();
+  // Expiry is checked exactly on receipt, and logged during idle time too.
+  const expiryTimer = setInterval(() => saveMode.expire(), 1000);
+  expiryTimer.unref();
 
 
 client.on('ready', async () => {
-    console.log('WWeb version:', await client.getWWebVersion());
+    try {
+      console.log('WWeb version:', await client.getWWebVersion());
+    } catch (err) {
+      logError('Gagal membaca versi WhatsApp Web', err);
+    }
 });
   /*
    * Tangkap semua pesan.
@@ -221,6 +245,7 @@ client.on('ready', async () => {
    */
   process.on('SIGINT', async () => {
     console.log('\nMenghentikan bot dengan aman...');
+    clearInterval(expiryTimer);
 
     try {
       await client.destroy();
@@ -237,7 +262,11 @@ client.on('ready', async () => {
   await client.initialize();
 }
 
-main().catch((err) => {
-  logError('Fatal error saat startup', err);
-  process.exit(1);
-});
+if (require.main === module) {
+  main().catch((err) => {
+    logError('Fatal error saat startup', err);
+    process.exit(1);
+  });
+}
+
+module.exports = { handleIncomingMessage };

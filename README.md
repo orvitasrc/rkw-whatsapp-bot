@@ -9,8 +9,9 @@ WhatsApp Group → WhatsApp Automation → Rule Engine → Local Storage
 **Scope Phase 1 (sengaja dibuat sederhana):**
 - Koneksi ke WhatsApp lewat WhatsApp Web automation (`whatsapp-web.js`), tanpa WhatsApp Desktop.
 - Login sekali via QR code, session tersimpan lokal (tidak perlu scan ulang selama session valid).
-- Memantau **satu** group (via `GROUP_ID`) dan **whitelist sender** (via `ALLOWED_SENDERS`).
-- Kalau message dari group+sender yang sesuai dan mengandung **image**, image otomatis di-download dan disimpan ke `storage/YYYY-MM-DD/`.
+- Memantau **satu** group (via `GROUP_ID`) untuk **semua sender**.
+- Kirim **SETFOLDER <nama folder>**, lalu teks **SAVETOLOCAL** (case-insensitive) untuk mengaktifkan save mode pribadi selama 5 menit. Image tanpa mode aktif diabaikan.
+- Setiap image yang berhasil disimpan memperpanjang window 5 menit. Tujuan: `storage/YYYY-MM-DD/<folder aktif>/`. Sender lain harus mengaktifkan mode sendiri. State hanya di memory dan hilang saat restart.
 - **Tidak ada AI, tidak ada database, tidak ada dashboard, tidak ada API server, tidak ada Docker.** Semua itu sengaja belum dibuat di tahap ini.
 - Caption **belum** diparsing (itu untuk Phase 2).
 
@@ -22,7 +23,7 @@ WhatsApp Group → WhatsApp Automation → Rule Engine → Local Storage
 src/
 ├── index.js      Entry point: wiring semua modul + graceful shutdown
 ├── whatsapp.js   Setup WhatsApp Client (LocalAuth, QR, event status)
-├── rules.js      Rule engine murni logika (cek group, cek sender, cek tipe media)
+├── rules.js      Rule engine murni logika (cek group, cek tipe media)
 ├── media.js      Download media + simpan ke storage/ dengan nama aman & anti-overwrite
 └── config.js     Baca & validasi environment variables (.env)
 ```
@@ -30,8 +31,8 @@ src/
 Alur satu pesan masuk:
 
 1. `whatsapp.js` menerima event `message` dari WhatsApp Web.
-2. `index.js` memanggil `rules.evaluateMessage()` untuk mengecek: apakah dari `GROUP_ID` yang benar? apakah sender ada di `ALLOWED_SENDERS`? apakah ada media image?
-3. Kalau semua syarat lolos, `media.js` men-download media dan menyimpannya ke `storage/<tanggal message>/image-XXX.<ext>`.
+2. `index.js` memanggil `rules.evaluateMessage()` untuk mengecek: apakah dari `GROUP_ID` yang benar? apakah ada media image?
+3. Handler memproses trigger `SAVETOLOCAL` per sender (`@lid`/`@c.us`). Image memerlukan save mode aktif. Kalau semua syarat lolos, `media.js` men-download media dan menyimpannya ke `storage/<tanggal message>/<folder aktif>/image-XXX.<ext>`.
 4. Semua langkah dicatat ke terminal dengan timestamp.
 
 Session WhatsApp (hasil scan QR) disimpan otomatis oleh library ke folder `.wwebjs_auth/` — **jangan commit folder ini ke git** (sudah masuk `.gitignore`).
@@ -44,7 +45,7 @@ Session WhatsApp (hasil scan QR) disimpan otomatis oleh library ke folder `.wweb
 |---|---|
 | `whatsapp-web.js` | Library utama untuk automasi WhatsApp Web (tanpa WhatsApp Desktop), dipilih sesuai requirement. Menjalankan Chromium headless via Puppeteer di belakang layar untuk terhubung ke WhatsApp Web. |
 | `qrcode-terminal` | Menampilkan QR code langsung di terminal supaya bisa langsung di-scan dari HP, tanpa perlu buka file/browser tambahan. |
-| `dotenv` | Memuat konfigurasi sensitif (`GROUP_ID`, `ALLOWED_SENDERS`) dari `.env` supaya tidak hardcode di source code. |
+| `dotenv` | Memuat konfigurasi sensitif (`GROUP_ID`) dari `.env` supaya tidak hardcode di source code. |
 
 Tidak ada dependency AI/ML, database, atau web framework — sesuai batasan Phase 1.
 
@@ -98,28 +99,25 @@ Salin dulu template-nya:
 cp .env.example .env
 ```
 
-Untuk **pertama kali menjalankan**, `GROUP_ID` dan `ALLOWED_SENDERS` boleh dikosongkan dulu **kecuali** kamu sudah tahu nilainya — tapi bot akan menolak start kalau kosong (lihat bagian troubleshooting untuk cara ambil `GROUP_ID` menggunakan bot ini sendiri).
+Untuk **pertama kali menjalankan**, `GROUP_ID` boleh dikosongkan dalam `DISCOVERY_MODE=true`. Mode normal memerlukan `GROUP_ID` (lihat bagian troubleshooting untuk cara ambil `GROUP_ID` menggunakan bot ini sendiri).
 
 Contoh isi setelah diketahui nilainya:
 
 ```env
 GROUP_ID=120363012345678901@g.us
-ALLOWED_SENDERS=628123456789,628987654321
+DISCOVERY_MODE=false
 STORAGE_DIR=./storage
 ```
 
-Catatan format `ALLOWED_SENDERS`:
-- Pisahkan dengan koma, tanpa spasi.
-- Gunakan kode negara + nomor, **tanpa** tanda `+` dan **tanpa** `@c.us` (bot akan menormalisasi otomatis).
-- Contoh: `628123456789` untuk nomor Indonesia yang diawali `08123456789`.
+Semua anggota group boleh mengirim image, termasuk sender `@lid` dan `@c.us`. Kirim `SETFOLDER <nama folder>` lalu teks `SAVETOLOCAL` sebelum image; caption image tidak mengaktifkan mode. Konfigurasi lama `ALLOWED_SENDERS`/`ALLOWED_LIDS` tidak digunakan oleh workflow ini.
 
 ### 3.5 Jalankan bot
 
 ```bash
-npm start
+node src/index.js
 ```
 
-Kalau `GROUP_ID`/`ALLOWED_SENDERS` masih kosong, bot akan berhenti dengan pesan error yang jelas — isi dulu `.env` (lihat 3.4 & Troubleshooting).
+Kalau `GROUP_ID` masih kosong, bot akan berhenti dengan pesan error yang jelas — isi dulu `.env` (lihat 3.4 & Troubleshooting).
 
 ### 3.6 Scan QR Code
 
@@ -151,35 +149,15 @@ Session tersimpan otomatis di folder `.wwebjs_auth/`. Selama folder ini tidak di
 
 ## 4. Cara Mengetahui `GROUP_ID`
 
-Cara termudah pakai bot ini sendiri:
-
-1. Jalankan bot (`npm start`) dan pastikan sudah login (sudah sampai `WhatsApp ready`).
-2. Buat/pastikan group **"RKW DAILY REPORT"** sudah ada dan nomor RKW sudah jadi anggotanya.
-3. Kirim **pesan teks apa saja** (misalnya "test") ke group tersebut dari nomor manapun.
-4. Sementara ini `GROUP_ID` belum diisi sehingga message akan diabaikan secara silent — untuk mengetahui ID-nya, tambahkan sementara baris berikut di `src/index.js`, tepat di baris pertama fungsi `handleIncomingMessage`:
-
-   ```js
-   console.log('DEBUG message.from =', message.from);
-   ```
-
-5. Jalankan ulang bot, kirim pesan test lagi ke group. ID yang muncul (format `xxxxxxxxxx@g.us`) itulah `GROUP_ID`-nya.
-6. Isi `GROUP_ID` di `.env`, lalu **hapus lagi** baris debug tadi dari `src/index.js`.
-
----
-
-## 5. Cara Mengetahui Format Nomor Sender
-
-Format yang dipakai library untuk sender di dalam group adalah `message.author`, contoh: `628123456789@c.us`. Bot ini sudah otomatis mengekstrak dan menormalisasi jadi angka saja (`628123456789`) — jadi cukup isi `ALLOWED_SENDERS` di `.env` dengan angka tanpa `+` dan tanpa `@c.us`, sesuai contoh di bagian 3.4.
-
-Kalau ingin verifikasi manual, gunakan trik debug yang sama seperti mengambil `GROUP_ID` di atas, tapi log `evaluation.senderNumber` (tersedia di `index.js`, variabel `evaluation`).
+Set `DISCOVERY_MODE=true` di `.env`, jalankan `node src/index.js`, lalu kirim pesan ke group. Salin `GROUP ID` dari log ke `GROUP_ID` dan ubah `DISCOVERY_MODE=false` sebelum restart. Nama group tidak diperlukan.
 
 ---
 
 ## 6. Testing Skenario End-to-End
 
-1. Pastikan `.env` sudah terisi `GROUP_ID` dan `ALLOWED_SENDERS` (nomor teknisi yang akan mengirim foto harus masuk whitelist).
-2. Jalankan bot: `npm start`, tunggu sampai `Listening for messages...`.
-3. Dari nomor teknisi (yang ada di `ALLOWED_SENDERS`), kirim **satu foto** ke group **"RKW DAILY REPORT"**.
+1. Pastikan `.env` sudah terisi `GROUP_ID` dan `DISCOVERY_MODE=false`.
+2. Jalankan bot: `node src/index.js`, tunggu sampai `Listening for messages...`.
+3. Dari anggota group mana pun, kirim **SETFOLDER Proses Installasi Guard**, lalu **SAVETOLOCAL**, lalu **satu foto** ke group **"RKW DAILY REPORT"**.
 4. Perhatikan log di terminal, seharusnya muncul urutan seperti:
 
    ```
@@ -203,7 +181,7 @@ Kirim foto kedua dari nomor yang sama di hari yang sama untuk memastikan penamaa
 **Menjalankan ulang tanpa scan QR:** selama folder `.wwebjs_auth/` masih ada dan session belum di-unlink dari HP (Settings → Linked Devices), cukup jalankan lagi:
 
 ```bash
-npm start
+node src/index.js
 ```
 
 Bot akan langsung lanjut ke `WhatsApp ready` tanpa menampilkan QR lagi.
@@ -214,7 +192,7 @@ Bot akan langsung lanjut ke `WhatsApp ready` tanpa menampilkan QR lagi.
 
 **QR code tidak muncul / terpotong di terminal**
 - Perbesar ukuran jendela terminal (QR butuh ruang cukup lebar).
-- Pastikan tidak ada session lama yang corrupt: hapus folder `.wwebjs_auth/` lalu jalankan ulang `npm start` untuk memaksa QR baru.
+- Pastikan tidak ada session lama yang corrupt: hapus folder `.wwebjs_auth/` lalu jalankan ulang `node src/index.js` untuk memaksa QR baru.
 
 **QR sudah di-scan tapi tidak lanjut ke "WhatsApp ready"**
 - Pastikan HP terhubung internet saat proses linking.
@@ -232,16 +210,15 @@ Bot akan langsung lanjut ke `WhatsApp ready` tanpa menampilkan QR lagi.
 - Pastikan bot berstatus `Listening for messages...` (bukan masih `Waiting for QR...`).
 - Pastikan foto dikirim ke group yang **persis sama** dengan `GROUP_ID` di `.env` (bukan group lain dengan nama mirip).
 
-**Log menunjukkan "Message diabaikan: sender tidak termasuk ALLOWED_SENDERS"**
-- Cek kembali nomor di `ALLOWED_SENDERS`, pastikan formatnya angka polos (tanpa `+`, tanpa `@c.us`) dan sesuai kode negara nomor pengirim.
-
-**Foto terkirim tapi gagal di-download (error di log, bot tidak crash)**
-- Ini biasanya karena media WhatsApp sudah expired/dihapus sebelum sempat di-download, atau koneksi terputus saat proses download. Bot tetap jalan normal (sesuai desain) — cukup minta pengirim mengirim ulang foto sebagai test berikutnya.
-- Cek juga permission folder `storage/` (pastikan proses Node.js punya izin tulis).
+**Foto gagal di-download (bot tetap berjalan)**
+- Library 1.34.7 membaca `message.id._serialized`. Bila WhatsApp Web menyediakan ID sebagai `$1`, `media.js` menormalisasinya sebelum memanggil API asli. Lihat [laporan upstream](https://github.com/wwebjs/whatsapp-web.js/issues/201830).
+- Log `Media compatibility` menunjukkan workaround aktif. Error download menyertakan status ID dan cause/stack; ID, media key, dan payload tidak dicetak oleh diagnostik download.
+- Error `r: r` sendiri belum membuktikan penyebab. Konfirmasi dengan tes image live; kegagalan sebelum download selesai bukan bukti masalah storage.
+- Jalankan `node --test` untuk tes lokal filter, penyimpanan, kompatibilitas ID, dan kelanjutan handler sesudah error. Tes ini memakai pesan mock; hasil download WhatsApp memerlukan pengujian live.
 
 **Setelah pindah ke Windows Server nanti**
 - Pastikan Node.js versi yang sama/serupa terinstall di server.
-- Copy seluruh folder project (atau clone dari git tanpa `node_modules/`, `.env`, `.wwebjs_auth/`), lalu jalankan `npm install` dan `npm start` di server tersebut.
+- Copy seluruh folder project (atau clone dari git tanpa `node_modules/`, `.env`, `.wwebjs_auth/`), lalu jalankan `npm install` dan `node src/index.js` di server tersebut.
 - Folder `.wwebjs_auth/` dari macOS **tidak perlu** dipindah — sebaiknya login ulang (scan QR) langsung di server untuk session yang bersih, kecuali kamu sudah tahu proses migrasi session aman untuk versi Puppeteer/Chromium di lingkungan baru.
 
 ---
@@ -256,3 +233,20 @@ Sesuai scope PoC, hal-hal berikut **belum** dibuat dan memang belum perlu untuk 
 - Caption pesan belum dibaca/diparsing sama sekali.
 
 Phase 2 (nanti, terpisah) akan menambahkan parsing caption seperti `CABIN | SY215-023 | PEMASANGAN AC` menjadi struktur folder `storage/CABIN/SY215-023/YYYY-MM-DD/`.
+
+
+## Command penyimpanan lokal
+
+Semua command case-insensitive, hanya di GROUP_ID yang dikonfigurasi. Gunakan akun anggota lain (event `message` tidak menerima pesan akun bot sendiri).
+
+| Command | Fungsi |
+|---|---|
+| `SETFOLDER <nama folder>` | Mengatur folder pribadi. Kapitalisasi dipertahankan; karakter path berbahaya diganti. Tidak mengaktifkan atau memperpanjang mode. |
+| `SAVETOLOCAL` | Mengaktifkan mode 5 menit; wajib memiliki folder. |
+| `TIMESAVEMODE` | Menampilkan status, folder dan sisa waktu tanpa refresh. |
+| `STOPLOCAL` | Mematikan mode pribadi tanpa menghapus folder. |
+| `HELP` | Menampilkan panduan command di group. |
+
+Folder dan expiry disimpan per identifier sender dalam memory; restart menghapus keduanya. Image yang diterima saat mode aktif memakai folder saat penerimaan. Antrean menyimpan batch satu per satu. Keberhasilan penyimpanan memperpanjang timer; kegagalan tidak. STOPLOCAL tidak membatalkan foto yang sudah diterima dalam antrean, tetapi mencegah foto berikutnya dan mencegah download lama mengaktifkan ulang mode.
+
+Jalankan `node --test` untuk validasi lokal. Balasan WhatsApp dan download nyata perlu dites setelah restart satu instance bot.
