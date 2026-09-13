@@ -86,7 +86,7 @@ rkw-whatsapp-bot/
 Dari dalam folder `rkw-whatsapp-bot/`:
 
 ```bash
-npm install
+npm ci
 ```
 
 Ini akan mengunduh `whatsapp-web.js`, `qrcode-terminal`, `dotenv`, dan dependency turunannya (termasuk Puppeteer/Chromium — proses download bisa memakan waktu beberapa menit tergantung koneksi internet).
@@ -196,7 +196,7 @@ Bot akan langsung lanjut ke `WhatsApp ready` tanpa menampilkan QR lagi.
 
 **QR sudah di-scan tapi tidak lanjut ke "WhatsApp ready"**
 - Pastikan HP terhubung internet saat proses linking.
-- Cek versi `whatsapp-web.js` — WhatsApp Web kadang berubah struktur dan butuh update versi library (`npm update whatsapp-web.js`).
+- Cek versi `whatsapp-web.js` — WhatsApp Web kadang berubah struktur dan butuh update versi library (`jangan upgrade langsung di production`).
 - Coba hapus `.wwebjs_auth/` dan `.wwebjs_cache/` (jika ada), lalu scan ulang dari awal.
 
 **Event `auth_failure` muncul di log**
@@ -218,7 +218,7 @@ Bot akan langsung lanjut ke `WhatsApp ready` tanpa menampilkan QR lagi.
 
 **Setelah pindah ke Windows Server nanti**
 - Pastikan Node.js versi yang sama/serupa terinstall di server.
-- Copy seluruh folder project (atau clone dari git tanpa `node_modules/`, `.env`, `.wwebjs_auth/`), lalu jalankan `npm install` dan `node src/index.js` di server tersebut.
+- Copy seluruh folder project (atau clone dari git tanpa `node_modules/`, `.env`, `.wwebjs_auth/`), lalu jalankan `npm ci` dan `node src/index.js` di server tersebut.
 - Folder `.wwebjs_auth/` dari macOS **tidak perlu** dipindah — sebaiknya login ulang (scan QR) langsung di server untuk session yang bersih, kecuali kamu sudah tahu proses migrasi session aman untuk versi Puppeteer/Chromium di lingkungan baru.
 
 ---
@@ -250,3 +250,25 @@ Semua command case-insensitive, hanya di GROUP_ID yang dikonfigurasi. Gunakan ak
 Folder dan expiry disimpan per identifier sender dalam memory; restart menghapus keduanya. Image yang diterima saat mode aktif memakai folder saat penerimaan. Antrean menyimpan batch satu per satu. Keberhasilan penyimpanan memperpanjang timer; kegagalan tidak. STOPLOCAL tidak membatalkan foto yang sudah diterima dalam antrean, tetapi mencegah foto berikutnya dan mencegah download lama mengaktifkan ulang mode.
 
 Jalankan `node --test` untuk validasi lokal. Balasan WhatsApp dan download nyata perlu dites setelah restart satu instance bot.
+
+
+## Reliability dan recovery
+
+Production wajib menggunakan `npm ci` dengan package-lock.json. **DO NOT run `npm update`.** Range dotenv/qrcode-terminal di package.json tidak mengubah versi yang dipasang npm ci; lockfile mengunci dependency transitif juga. Jangan hapus/regenerasi lockfile di server. Workaround `$1 -> _serialized` ada di src/media.js, bukan node_modules, dan tetap ada setelah npm ci.
+
+Image dianggap berhasil hanya setelah download, direktori tersedia, write selesai, dan stat file memastikan ukuran non-zero sesuai buffer. Baru kemudian timer di-refresh dan health di-reset. Kegagalan dilog dengan timestamp ISO, sender/group/message ID, stage dan stack: MEDIA_DOWNLOAD_FAILED, STORAGE_DIR_CREATE_FAILED, STORAGE_PATH_UNAVAILABLE, atau MEDIA_WRITE_FAILED.
+
+Setiap image yang seharusnya disimpan tetapi gagal mendapat notifikasi group. Tiga kegagalan media berturut-turut memicu satu percobaan warning admin di group yang sama. Kegagalan berikutnya tidak mengulang warning admin sampai ada save sukses. Kegagalan notifikasi dilog; tidak menambah counter media. Pengiriman notifikasi dibatasi tunggu 10 detik (tidak membatalkan request yang sedang berjalan dan tidak retry otomatis). BOTSTATUS menampilkan readiness, counter, waktu sukses terakhir (ISO UTC), dan hasil operasi storage terakhir; ini bukan jaminan drive masih sehat saat command dikirim. Tidak ada test write dari BOTSTATUS. Semua state health in-memory.
+
+Event auth/ready/disconnect memiliki log timestamp. Tidak ada penghapusan session, auto-relogin atau auto-update library. Counter/notifikasi menangani operasi yang melempar error; download yang menggantung masih memerlukan kebijakan timeout/recovery terpisah. WhatsApp Web internal changes dapat mempengaruhi download dan pengiriman balasan; bila balasan gagal, periksa log server.
+
+Workflow: `rkw-whatsapp-bot-mac` untuk development/testing; `rkw-whatsapp-bot-prod` untuk staging. Test perubahan di Mac, lakukan real test media, review diff, baru commit setelah approval dan deploy versi yang lolos. Jangan eksperimen langsung di production. Simpan paket source dan lockfile versi sebelumnya untuk rollback; jangan menimpa .env/session/storage ketika mengganti versi aplikasi. Kembali ke source lama tidak menjamin kompatibilitas jika WhatsApp Web sendiri berubah.
+
+Setelah working tree clean, real WhatsApp test lulus dan media save terbukti, tag dapat dibuat (belum dijalankan):
+
+```bash
+git tag -a v1.0-stable -m "Stable RKW WhatsApp storage bot"
+git push origin v1.0-stable
+```
+
+Pastikan nama tag belum digunakan; jangan force/memindahkan stable tag lama.

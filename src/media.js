@@ -88,6 +88,8 @@ async function nextAvailableFilename(dirPath, extension) {
  * yang harus ditangkap oleh pemanggil (index.js) supaya tidak crash.
  */
 async function saveMessageMedia(message, config, activeFolder) {
+  let stage = 'MEDIA_DOWNLOAD_FAILED';
+  try {
   // WA Web can expose the serialized ID as $1; wwebjs 1.34.7 still reads
   // _serialized. Preserve the complete ID (including group participant suffix).
   // https://github.com/wwebjs/whatsapp-web.js/issues/201830
@@ -117,30 +119,48 @@ async function saveMessageMedia(message, config, activeFolder) {
     throw new Error('downloadMedia() tidak mengembalikan data (media kosong/expired).');
   }
 
+  const buffer = Buffer.from(media.data, 'base64');
+  if (!buffer.length) throw new Error('Data media hasil decode kosong.');
+
+  stage = 'STORAGE_PATH_UNAVAILABLE';
   const dateFolder = formatDateFolder(dateFromMessageTimestamp(message));
   const projectFolder = sanitizeFolder(activeFolder);
+  stage = 'STORAGE_DIR_CREATE_FAILED';
   await ensureDir(config.STORAGE_DIR);
+  stage = 'STORAGE_PATH_UNAVAILABLE';
   const root = await fs.realpath(config.STORAGE_DIR);
   const dateDir = path.join(root, dateFolder);
+  stage = 'STORAGE_DIR_CREATE_FAILED';
   await ensureDir(dateDir);
+  stage = 'STORAGE_PATH_UNAVAILABLE';
   await assertWithinRoot(root, dateDir);
   const targetDir = path.join(dateDir, projectFolder);
+  stage = 'STORAGE_DIR_CREATE_FAILED';
   await ensureDir(targetDir);
+  stage = 'STORAGE_PATH_UNAVAILABLE';
   await assertWithinRoot(root, targetDir);
 
   const extension = extensionFromMimetype(media.mimetype);
   const filename = await nextAvailableFilename(targetDir, extension);
   const targetPath = path.join(targetDir, filename);
 
-  const buffer = Buffer.from(media.data, 'base64');
+  stage = 'MEDIA_WRITE_FAILED';
   // wx = write, fail if file already exists -> extra safety net vs overwrite
   await fs.writeFile(targetPath, buffer, { flag: 'wx' });
+  const result = await fs.stat(targetPath);
+  if (!result.isFile() || result.size === 0 || result.size !== buffer.length) {
+    throw new Error('Validasi file gagal: hasil kosong atau ukuran tidak sesuai.');
+  }
 
   return {
     relativePath: path.join('storage', dateFolder, projectFolder, filename),
     absolutePath: targetPath,
     bytes: buffer.length,
   };
+  } catch (err) {
+    err.stage = stage;
+    throw err;
+  }
 }
 
 module.exports = {

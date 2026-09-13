@@ -20,6 +20,9 @@ Mematikan Save Mode Anda. Folder tetap tersimpan untuk SAVETOLOCAL berikutnya.
 5. HELP
 Menampilkan panduan ini.
 
+6. BOTSTATUS
+Menampilkan koneksi WhatsApp, jumlah kegagalan media, dan waktu penyimpanan terakhir tanpa mengubah Save Mode.
+
 Semua command hanya berlaku di group ini dan tidak membedakan huruf besar/kecil.
 State folder dan Save Mode direset saat bot restart.`;
 

@@ -6,6 +6,7 @@ const { evaluateMessage, isFromConfiguredGroup, extractSenderId } = require('./r
 const { createSaveMode } = require('./save-mode');
 const { handleCommand } = require('./commands');
 const { saveMessageMedia } = require('./media');
+const { health, eventLog, sendNotice, USER_FAILURE, ADMIN_WARNING } = require('./health');
 
 function timestamp() {
   const d = new Date();
@@ -138,15 +139,11 @@ async function handleIncomingMessage(message) {
   }
   log(`Sender: ${sender}`);
 
-  const response = handleCommand(message, sender, saveMode, log);
+  const isStatus = message.type === 'chat' && !message.hasMedia &&
+    String(message.body || '').trim().toUpperCase() === 'BOTSTATUS';
+  const response = isStatus ? health.statusText() : handleCommand(message, sender, saveMode, log);
   if (response !== null) {
-    try {
-      // Plain group response avoids quoting IDs and does not send read receipts.
-      const sent = await message.client.sendMessage(config.GROUP_ID, response, { sendSeen: false });
-      if (!sent) throw new Error('sendMessage tidak mengembalikan pesan');
-    } catch (err) {
-      logError('Gagal mengirim respons command', err);
-    }
+    await sendNotice(message.client, config.GROUP_ID, response);
     return;
   }
 
@@ -173,10 +170,16 @@ async function handleIncomingMessage(message) {
     try {
       log('Downloading media...');
       const result = await saveMessageMedia(message, config, accepted.activeFolder);
+      health.success();
       log(`Saved: ${result.relativePath}`);
       saveMode.refresh(sender, accepted);
     } catch (err) {
-      console.error(`[${timestamp()}] Gagal memproses media:`, err);
+      const code = err.stage || 'MEDIA_SAVE_FAILED';
+      const warnAdmin = health.failure(code);
+      eventLog(code, { sender, group: message.from,
+        messageId: message.id?._serialized || message.id?.$1 || message.id?.id || 'unavailable' }, err);
+      await sendNotice(message.client, config.GROUP_ID, USER_FAILURE);
+      if (warnAdmin) await sendNotice(message.client, config.GROUP_ID, ADMIN_WARNING);
     }
   });
   await saveQueue;

@@ -2,6 +2,7 @@
 
 const { Client, LocalAuth } = require('whatsapp-web.js');
 const qrcode = require('qrcode-terminal');
+const { bindHealthEvents } = require('./health');
 
 /**
  * Bikin instance WhatsApp Client dengan session tersimpan lokal (LocalAuth),
@@ -26,22 +27,7 @@ function createClient() {
     console.log('Scan QR code di atas menggunakan HP nomor WhatsApp RKW (Linked Devices).');
   });
 
-  client.on('authenticated', () => {
-    console.log('WhatsApp authenticated');
-  });
-
-  client.on('auth_failure', (msg) => {
-    console.error('Authentication FAILED:', msg);
-  });
-
-  client.on('ready', () => {
-    console.log('WhatsApp ready');
-    console.log('Listening for messages...');
-  });
-
-  client.on('disconnected', (reason) => {
-    console.warn('WhatsApp disconnected:', reason);
-  });
+  bindHealthEvents(client);
 
   return client;
 }

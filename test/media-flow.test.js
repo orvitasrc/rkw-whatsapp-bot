@@ -79,8 +79,10 @@ test('handler ignores rejected messages; catches failure and saves subsequent im
     await handleIncomingMessage(message({ async downloadMedia() { return undefined; } }));
   } finally { console.error = originalError; }
   assert.equal(errors.length, 2);
-  assert.match(errors[0][1].message, /downloadMedia gagal/);
-  assert.equal(errors[0][1].cause.message, 'r: r');
+  const failureLog = JSON.parse(errors[0][0]);
+  assert.equal(failureLog.code, 'MEDIA_DOWNLOAD_FAILED');
+  assert.match(failureLog.error, /downloadMedia gagal/);
+  assert.match(failureLog.cause, /r: r/);
   assert.deepEqual(await fs.readdir(dir), []);
   await handleIncomingMessage(message());
   const folders = await fs.readdir(dir);
