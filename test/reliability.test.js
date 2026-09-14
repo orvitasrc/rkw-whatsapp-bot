@@ -67,7 +67,7 @@ test('handler failures notify once per image and once per streak; ignored images
   const command = (body, extra = {}) => handleIncomingMessage({ ...msg(), client, type: 'chat', hasMedia: false, body, ...extra });
   const image = (extra = {}) => handleIncomingMessage({ ...msg(), client, ...extra });
   await image(); assert.equal(health.snapshot().consecutiveMediaFailures,0); assert.equal(sent.length,0);
-  await command('SETFOLDER Reliability Test'); await command('SAVETOLOCAL');
+  await command('MAKEFOLDER Reliability Test'); await command('SAVETOSERVER');
   t.mock.timers.enable({ apis: ['Date'], now: Date.now() });
   t.mock.timers.tick(60000);
   await command('TIMESAVEMODE'); const remaining = sent.at(-1);

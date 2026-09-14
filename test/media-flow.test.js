@@ -69,8 +69,8 @@ test('handler ignores rejected messages; catches failure and saves subsequent im
   for (const overrides of [{ type: 'chat', hasMedia: false }, { from: 'private@c.us' }, { from: 'other@g.us' }]) {
     await handleIncomingMessage(message({ ...overrides, downloadMedia() { assert.fail('ignored'); } }));
   }
-  await handleIncomingMessage(message({ type: 'chat', hasMedia: false, body: 'SETFOLDER Project' }));
-  await handleIncomingMessage(message({ type: 'chat', hasMedia: false, body: 'SAVETOLOCAL' }));
+  await handleIncomingMessage(message({ type: 'chat', hasMedia: false, body: 'MAKEFOLDER Project' }));
+  await handleIncomingMessage(message({ type: 'chat', hasMedia: false, body: 'SAVETOSERVER' }));
   const errors = [];
   const originalError = console.error;
   console.error = (...args) => errors.push(args);
@@ -90,7 +90,7 @@ test('handler ignores rejected messages; catches failure and saves subsequent im
   assert.deepEqual(await fs.readdir(path.join(dir, folders[0], 'Project')), ['image-001.png']);
 });
 
-test('SAVETOLOCAL gates each sender, ignores captions/outside triggers, saves concurrent batch', async (t) => {
+test('SAVETOSERVER gates each sender, ignores captions/outside triggers, saves concurrent batch', async (t) => {
   const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'rkw-test-'));
   const original = { ...config };
   t.after(async () => { Object.assign(config, original); await fs.rm(dir, { recursive: true, force: true }); });
@@ -104,26 +104,26 @@ test('SAVETOLOCAL gates each sender, ignores captions/outside triggers, saves co
       return { mimetype: 'image/png', data: png };
     } });
   }
-  function trigger(author, body = 'SAVETOLOCAL', extras = {}) {
+  function trigger(author, body = 'SAVETOSERVER', extras = {}) {
     return message({ author, type: 'chat', hasMedia: false, body, ...extras,
       downloadMedia() { assert.fail('text must never download'); } });
   }
   await handleIncomingMessage(image(adi));
-  await handleIncomingMessage(image(adi, { body: 'SAVETOLOCAL' }));
-  await handleIncomingMessage(trigger(adi, 'SAVETOLOCAL', { from: 'other@g.us' }));
-  await handleIncomingMessage(trigger(adi, 'SAVETOLOCAL', { from: 'private@c.us' }));
+  await handleIncomingMessage(image(adi, { body: 'SAVETOSERVER' }));
+  await handleIncomingMessage(trigger(adi, 'SAVETOSERVER', { from: 'other@g.us' }));
+  await handleIncomingMessage(trigger(adi, 'SAVETOSERVER', { from: 'private@c.us' }));
   await handleIncomingMessage(trigger(undefined));
   await handleIncomingMessage(image(undefined));
   await handleIncomingMessage(image(adi));
   assert.equal(downloads, 0);
-  await handleIncomingMessage(trigger(adi, 'SETFOLDER Project'));
-  await handleIncomingMessage(trigger(adi, 'savetolocal'));
+  await handleIncomingMessage(trigger(adi, 'MAKEFOLDER Project'));
+  await handleIncomingMessage(trigger(adi, 'savetoserver'));
   await Promise.all([1, 2, 3].map(() => handleIncomingMessage(image(adi))));
   assert.equal(downloads, 3);
   await handleIncomingMessage(image(agus));
   assert.equal(downloads, 3);
-  await handleIncomingMessage(trigger(agus, 'SETFOLDER Project'));
-  await handleIncomingMessage(trigger(agus, 'SaveToLocal'));
+  await handleIncomingMessage(trigger(agus, 'MAKEFOLDER Project'));
+  await handleIncomingMessage(trigger(agus, 'SaveToServer'));
   await handleIncomingMessage(image(agus));
   assert.equal(downloads, 4);
   await handleIncomingMessage(trigger(adi));
@@ -150,21 +150,21 @@ test('commands reply only in target group; stopped sender cannot save; reply fai
   const command = (body, overrides = {}) => handleIncomingMessage(message({
     type: 'chat', hasMedia: false, author: 'commands@lid', body, client, ...overrides,
   }));
-  for (const body of ['HELP', 'SETFOLDER Task', 'SAVETOLOCAL', 'TIMESAVEMODE', 'STOPLOCAL']) {
+  for (const body of ['HELP', 'MAKEFOLDER Task', 'SAVETOSERVER', 'TIMESAVEMODE', 'STOPSAVE']) {
     await command(body, { from: 'other@g.us' });
     await command(body, { from: 'private@c.us' });
   }
   assert.equal(responses.length, 0);
   await command('HELP');
-  await command('SAVETOLOCAL');
+  await command('SAVETOSERVER');
   assert.match(responses.at(-1), /tidak dapat/);
-  await command('SETFOLDER Task');
-  await command('SAVETOLOCAL');
-  await command('STOPLOCAL');
+  await command('MAKEFOLDER Task');
+  await command('SAVETOSERVER');
+  await command('STOPSAVE');
   await handleIncomingMessage(message({ author: 'commands@lid', async downloadMedia() {
     assert.fail('stopped mode must not download');
   } }));
-  await command('SAVETOLOCAL');
+  await command('SAVETOSERVER');
   assert.match(responses.at(-1), /Folder: Task/);
   const errors = [];
   const previous = console.error;

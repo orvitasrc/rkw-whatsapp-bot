@@ -1,6 +1,6 @@
 'use strict';
 
-const SAVE_TRIGGER = 'SAVETOLOCAL';
+const SAVE_TRIGGER = 'SAVETOSERVER';
 const SAVE_WINDOW_MS = 5 * 60 * 1000;
 
 function sanitizeFolder(value) {
@@ -64,7 +64,7 @@ function createSaveMode({ now = Date.now, log = () => {} } = {}) {
     },
     refresh(sender, accepted) {
       const state = states.get(sender);
-      // A completed download must not undo STOPLOCAL or overwrite a new session.
+      // A completed download must not undo STOPSAVE or overwrite a new session.
       if (!state || state.session !== accepted.session || !state.expiresAt) return;
       state.expiresAt = now() + SAVE_WINDOW_MS;
       log(`Save mode refreshed: ${sender}`);

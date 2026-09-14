@@ -10,7 +10,7 @@ WhatsApp Group → WhatsApp Automation → Rule Engine → Local Storage
 - Koneksi ke WhatsApp lewat WhatsApp Web automation (`whatsapp-web.js`), tanpa WhatsApp Desktop.
 - Login sekali via QR code, session tersimpan lokal (tidak perlu scan ulang selama session valid).
 - Memantau **satu** group (via `GROUP_ID`) untuk **semua sender**.
-- Kirim **SETFOLDER <nama folder>**, lalu teks **SAVETOLOCAL** (case-insensitive) untuk mengaktifkan save mode pribadi selama 5 menit. Image tanpa mode aktif diabaikan.
+- Kirim **MAKEFOLDER <nama folder>**, lalu teks **SAVETOSERVER** (case-insensitive) untuk mengaktifkan save mode pribadi selama 5 menit. Image tanpa mode aktif diabaikan.
 - Setiap image yang berhasil disimpan memperpanjang window 5 menit. Tujuan: `storage/YYYY-MM-DD/<folder aktif>/`. Sender lain harus mengaktifkan mode sendiri. State hanya di memory dan hilang saat restart.
 - **Tidak ada AI, tidak ada database, tidak ada dashboard, tidak ada API server, tidak ada Docker.** Semua itu sengaja belum dibuat di tahap ini.
 - Caption **belum** diparsing (itu untuk Phase 2).
@@ -32,7 +32,7 @@ Alur satu pesan masuk:
 
 1. `whatsapp.js` menerima event `message` dari WhatsApp Web.
 2. `index.js` memanggil `rules.evaluateMessage()` untuk mengecek: apakah dari `GROUP_ID` yang benar? apakah ada media image?
-3. Handler memproses trigger `SAVETOLOCAL` per sender (`@lid`/`@c.us`). Image memerlukan save mode aktif. Kalau semua syarat lolos, `media.js` men-download media dan menyimpannya ke `storage/<tanggal message>/<folder aktif>/image-XXX.<ext>`.
+3. Handler memproses trigger `SAVETOSERVER` per sender (`@lid`/`@c.us`). Image memerlukan save mode aktif. Kalau semua syarat lolos, `media.js` men-download media dan menyimpannya ke `storage/<tanggal message>/<folder aktif>/image-XXX.<ext>`.
 4. Semua langkah dicatat ke terminal dengan timestamp.
 
 Session WhatsApp (hasil scan QR) disimpan otomatis oleh library ke folder `.wwebjs_auth/` — **jangan commit folder ini ke git** (sudah masuk `.gitignore`).
@@ -109,7 +109,7 @@ DISCOVERY_MODE=false
 STORAGE_DIR=./storage
 ```
 
-Semua anggota group boleh mengirim image, termasuk sender `@lid` dan `@c.us`. Kirim `SETFOLDER <nama folder>` lalu teks `SAVETOLOCAL` sebelum image; caption image tidak mengaktifkan mode. Konfigurasi lama `ALLOWED_SENDERS`/`ALLOWED_LIDS` tidak digunakan oleh workflow ini.
+Semua anggota group boleh mengirim image, termasuk sender `@lid` dan `@c.us`. Kirim `MAKEFOLDER <nama folder>` lalu teks `SAVETOSERVER` sebelum image; caption image tidak mengaktifkan mode. Konfigurasi lama `ALLOWED_SENDERS`/`ALLOWED_LIDS` tidak digunakan oleh workflow ini.
 
 ### 3.5 Jalankan bot
 
@@ -157,7 +157,7 @@ Set `DISCOVERY_MODE=true` di `.env`, jalankan `node src/index.js`, lalu kirim pe
 
 1. Pastikan `.env` sudah terisi `GROUP_ID` dan `DISCOVERY_MODE=false`.
 2. Jalankan bot: `node src/index.js`, tunggu sampai `Listening for messages...`.
-3. Dari anggota group mana pun, kirim **SETFOLDER Proses Installasi Guard**, lalu **SAVETOLOCAL**, lalu **satu foto** ke group **"RKW DAILY REPORT"**.
+3. Dari anggota group mana pun, kirim **MAKEFOLDER Proses Installasi Guard**, lalu **SAVETOSERVER**, lalu **satu foto** ke group **"RKW DAILY REPORT"**.
 4. Perhatikan log di terminal, seharusnya muncul urutan seperti:
 
    ```
@@ -241,13 +241,13 @@ Semua command case-insensitive, hanya di GROUP_ID yang dikonfigurasi. Gunakan ak
 
 | Command | Fungsi |
 |---|---|
-| `SETFOLDER <nama folder>` | Mengatur folder pribadi. Kapitalisasi dipertahankan; karakter path berbahaya diganti. Tidak mengaktifkan atau memperpanjang mode. |
-| `SAVETOLOCAL` | Mengaktifkan mode 5 menit; wajib memiliki folder. |
+| `MAKEFOLDER <nama folder>` | Mengatur folder pribadi. Kapitalisasi dipertahankan; karakter path berbahaya diganti. Tidak mengaktifkan atau memperpanjang mode. |
+| `SAVETOSERVER` | Mengaktifkan mode 5 menit; wajib memiliki folder. |
 | `TIMESAVEMODE` | Menampilkan status, folder dan sisa waktu tanpa refresh. |
-| `STOPLOCAL` | Mematikan mode pribadi tanpa menghapus folder. |
+| `STOPSAVE` | Mematikan mode pribadi tanpa menghapus folder. |
 | `HELP` | Menampilkan panduan command di group. |
 
-Folder dan expiry disimpan per identifier sender dalam memory; restart menghapus keduanya. Image yang diterima saat mode aktif memakai folder saat penerimaan. Antrean menyimpan batch satu per satu. Keberhasilan penyimpanan memperpanjang timer; kegagalan tidak. STOPLOCAL tidak membatalkan foto yang sudah diterima dalam antrean, tetapi mencegah foto berikutnya dan mencegah download lama mengaktifkan ulang mode.
+Folder dan expiry disimpan per identifier sender dalam memory; restart menghapus keduanya. Image yang diterima saat mode aktif memakai folder saat penerimaan. Antrean menyimpan batch satu per satu. Keberhasilan penyimpanan memperpanjang timer; kegagalan tidak. STOPSAVE tidak membatalkan foto yang sudah diterima dalam antrean, tetapi mencegah foto berikutnya dan mencegah download lama mengaktifkan ulang mode.
 
 Jalankan `node --test` untuk validasi lokal. Balasan WhatsApp dan download nyata perlu dites setelah restart satu instance bot.
 
