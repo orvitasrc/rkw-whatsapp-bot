@@ -57,7 +57,7 @@ test('media stage codes and non-zero file validation', async (t) => {
   assert.ok(success.bytes > 0); assert.equal((await fs.stat(success.absolutePath)).size, success.bytes);
 });
 
-test('handler failures notify once per image and once per streak; ignored images and BOTSTATUS are neutral', async (t) => {
+for (const mediaType of ['image', 'video']) test(`handler ${mediaType} failure/success timer and shared reliability`, async (t) => {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), 'rkw-reliability-handler-'));
   const original = { ...config }; t.after(async () => { Object.assign(config, original); await fs.rm(root, { recursive: true, force: true }); });
   Object.assign(config, { GROUP_ID: 'reliability@g.us', STORAGE_DIR: root });
@@ -65,7 +65,8 @@ test('handler failures notify once per image and once per streak; ignored images
   const sent = [];
   const client = { async sendMessage(group, text, options) { assert.equal(group, config.GROUP_ID); assert.equal(options.sendSeen,false); sent.push(text); return {}; } };
   const command = (body, extra = {}) => handleIncomingMessage({ ...msg(), client, type: 'chat', hasMedia: false, body, ...extra });
-  const image = (extra = {}) => handleIncomingMessage({ ...msg(), client, ...extra });
+  const image = (extra = {}) => handleIncomingMessage({ ...msg(), client, type: mediaType,
+    async downloadMedia() { return { mimetype: mediaType === 'video' ? 'video/mp4' : 'image/jpeg', data: Buffer.from('raw-media-bytes').toString('base64') }; }, ...extra });
   await image(); assert.equal(health.snapshot().consecutiveMediaFailures,0); assert.equal(sent.length,0);
   await command('MAKEFOLDER Reliability Test'); await command('SAVETOSERVER');
   t.mock.timers.enable({ apis: ['Date'], now: Date.now() });

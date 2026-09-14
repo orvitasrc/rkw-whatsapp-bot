@@ -2,7 +2,7 @@
 
 /**
  * Rule engine sederhana untuk Phase 1.
- * Tidak pakai AI - murni pengecekan berbasis konfigurasi (group & image).
+ * Tidak pakai AI - murni pengecekan berbasis konfigurasi (group & image/video).
  *
  * Hasil evaluasi selalu berbentuk:
  *   { allowed: boolean, reason: string, senderNumber: string|null }
@@ -52,8 +52,8 @@ function evaluateMessage(message, config) {
     return { allowed: false, reason: 'group_not_configured', senderNumber: senderId };
   }
 
-  if (!hasImageMedia(message)) {
-    return { allowed: false, reason: 'no_image_media', senderNumber: senderId };
+  if (!(message.hasMedia === true && ['image', 'video'].includes(message.type))) {
+    return { allowed: false, reason: 'unsupported_media', senderNumber: senderId };
   }
 
   return { allowed: true, reason: 'ok', senderNumber: senderId };

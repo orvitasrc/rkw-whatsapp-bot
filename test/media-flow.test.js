@@ -13,7 +13,7 @@ const group = 'test@g.us';
 const png = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jRZkAAAAASUVORK5CYII=';
 function message(overrides = {}) {
   return { from: group, author: 'unlisted@lid', hasMedia: true, type: 'image',
-    timestamp: 1789088400, id: { _serialized: 'complete-message-id' },
+    timestamp: Math.floor(Date.now() / 1000), id: { _serialized: 'complete-message-id' },
     client: { async sendMessage() { return {}; } },
     async downloadMedia() { return { mimetype: 'image/png', data: png }; }, ...overrides };
 }
@@ -23,7 +23,7 @@ test('group/image filters accept every sender and reject text/private/other grou
     assert.equal(evaluateMessage(message({ author }), settings).allowed, true);
   }
   for (const overrides of [{ type: 'chat', hasMedia: false }, { from: 'private@c.us' },
-    { from: 'other@g.us' }, { type: 'video' }, { hasMedia: false }]) {
+    { from: 'other@g.us' }, { type: 'document' }, { type: 'audio' }, { type: 'sticker' }, { hasMedia: false }]) {
     assert.equal(evaluateMessage(message(overrides), settings).allowed, false);
   }
   assert.equal(evaluateMessage(message({ from: undefined }), {}).allowed, false);
@@ -83,7 +83,8 @@ test('handler ignores rejected messages; catches failure and saves subsequent im
   assert.equal(failureLog.code, 'MEDIA_DOWNLOAD_FAILED');
   assert.match(failureLog.error, /downloadMedia gagal/);
   assert.match(failureLog.cause, /r: r/);
-  assert.deepEqual(await fs.readdir(dir), []);
+  const [createdDay] = await fs.readdir(dir);
+  assert.deepEqual(await fs.readdir(path.join(dir, createdDay, 'Project')), []);
   await handleIncomingMessage(message());
   const folders = await fs.readdir(dir);
   assert.equal(folders.length, 1);
@@ -138,7 +139,9 @@ test('SAVETOSERVER gates each sender, ignores captions/outside triggers, saves c
 
 test('commands reply only in target group; stopped sender cannot save; reply failures are contained', async (t) => {
   const original = { ...config };
-  t.after(() => Object.assign(config, original));
+  const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'rkw-command-test-'));
+  t.after(async () => { Object.assign(config, original); await fs.rm(dir, { recursive: true, force: true }); });
+  config.STORAGE_DIR = dir;
   config.GROUP_ID = group;
   const responses = [];
   const client = { async sendMessage(to, body, options) {

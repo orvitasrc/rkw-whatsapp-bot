@@ -5,7 +5,8 @@ const { createClient } = require('./whatsapp');
 const { evaluateMessage, isFromConfiguredGroup, extractSenderId } = require('./rules');
 const { createSaveMode } = require('./save-mode');
 const { handleCommand } = require('./commands');
-const { saveMessageMedia } = require('./media');
+const { saveMessageMedia, formatDateFolder, dateFromMessageTimestamp } = require('./media');
+const { createFolderManager, isFolderCommand, handleFolderCommand, key } = require('./folders');
 const { health, eventLog, sendNotice, USER_FAILURE, ADMIN_WARNING } = require('./health');
 
 function timestamp() {
@@ -106,6 +107,7 @@ async function handleDiscoveryMessage(message) {
 
 const saveMode = createSaveMode({ log });
 let saveQueue = Promise.resolve();
+const pendingMedia = new Set();
 
 async function handleIncomingMessage(message) {
   /*
@@ -139,6 +141,19 @@ async function handleIncomingMessage(message) {
   }
   log(`Sender: ${sender}`);
 
+  if (isFolderCommand(message)) {
+    const work = saveQueue.then(() => handleFolderCommand(message, sender, saveMode,
+      createFolderManager(config.STORAGE_DIR), ({ date, oldName, newName }) => {
+        for (const media of pendingMedia) {
+          if (media.date === date && key(media.activeFolder) === key(oldName)) media.activeFolder = newName;
+        }
+      }, log));
+    saveQueue = work.then(() => {}, () => {});
+    const response = await work;
+    if (response !== null) await sendNotice(message.client, config.GROUP_ID, response);
+    return;
+  }
+
   const isStatus = message.type === 'chat' && !message.hasMedia &&
     String(message.body || '').trim().toUpperCase() === 'BOTSTATUS';
   const response = isStatus ? health.statusText() : handleCommand(message, sender, saveMode, log);
@@ -148,38 +163,42 @@ async function handleIncomingMessage(message) {
   }
 
   if (!evaluateMessage(message, config).allowed) {
-    log('Message ignored: no image media');
+    log('Message ignored: unsupported media');
     return;
   }
   const accepted = saveMode.acceptImage(sender);
   if (!accepted) {
-    log('Image ignored: save mode inactive');
+    log('Media ignored: save mode inactive');
     return;
   }
 
   if (!accepted.activeFolder) {
-    log('Image ignored: active folder not set');
+    log('Media ignored: active folder not set');
     return;
   }
-  log('Media detected: image');
+  accepted.date = formatDateFolder(dateFromMessageTimestamp(message));
+  pendingMedia.add(accepted);
+  log(`Media detected: ${message.type}`);
   log(`Save mode active: ${sender}`);
   log(`Target folder: ${accepted.activeFolder}`);
 
-  // Serialize writes so a batch cannot select the same image-NNN filename.
+  // Serialize writes so a batch cannot select the same media filename.
   saveQueue = saveQueue.then(async () => {
     try {
-      log('Downloading media...');
+      log(`Downloading media... type=${message.type}`);
       const result = await saveMessageMedia(message, config, accepted.activeFolder);
       health.success();
-      log(`Saved: ${result.relativePath}`);
+      log(`Saved: ${result.relativePath} (type=${message.type}, bytes=${result.bytes})`);
       saveMode.refresh(sender, accepted);
     } catch (err) {
       const code = err.stage || 'MEDIA_SAVE_FAILED';
       const warnAdmin = health.failure(code);
-      eventLog(code, { sender, group: message.from,
+      eventLog(code, { mediaType: message.type, sender, group: message.from,
         messageId: message.id?._serialized || message.id?.$1 || message.id?.id || 'unavailable' }, err);
       await sendNotice(message.client, config.GROUP_ID, USER_FAILURE);
       if (warnAdmin) await sendNotice(message.client, config.GROUP_ID, ADMIN_WARNING);
+    } finally {
+      pendingMedia.delete(accepted);
     }
   });
   await saveQueue;

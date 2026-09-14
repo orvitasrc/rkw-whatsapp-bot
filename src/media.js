@@ -28,7 +28,13 @@ function dateFromMessageTimestamp(message) {
  * Tentukan ekstensi file yang aman dari mimetype media.
  * Default ke .jpg kalau mimetype tidak dikenali (jarang terjadi untuk image).
  */
-function extensionFromMimetype(mimetype) {
+function extensionFromMimetype(mimetype, mediaType = 'image') {
+  if (mediaType === 'video') {
+    const videoExtensions = { 'video/mp4': '.mp4', 'video/3gpp': '.3gp',
+      'video/quicktime': '.mov', 'video/webm': '.webm' };
+    const normalized = String(mimetype || '').split(';')[0].trim().toLowerCase();
+    return videoExtensions[normalized] || '.bin'; // Unknown raw video bytes; no conversion.
+  }
   const map = {
     'image/jpeg': '.jpg',
     'image/jpg': '.jpg',
@@ -52,10 +58,11 @@ async function ensureDir(dirPath) {
 
 /**
  * Cari nama file yang belum dipakai di dalam folder, dengan pola:
- *   image-001.jpg, image-002.jpg, ...
+ *   image-001.jpg, image-002.jpg, ... / video-001.mp4, video-002.mp4, ...
  * Tidak akan pernah overwrite file yang sudah ada.
  */
-async function nextAvailableFilename(dirPath, extension) {
+async function nextAvailableFilename(dirPath, extension, mediaType = 'image') {
+  const prefix = mediaType === 'video' ? 'video' : 'image';
   let entries = [];
   try {
     entries = await fs.readdir(dirPath);
@@ -67,7 +74,7 @@ async function nextAvailableFilename(dirPath, extension) {
   const usedNumbers = new Set(
     entries
       .map((name) => {
-        const match = name.match(/^image-(\d{3,})\..+$/i);
+        const match = name.match(new RegExp(`^${prefix}-(\\d{3,})\\..+$`, 'i'));
         return match ? parseInt(match[1], 10) : null;
       })
       .filter((n) => n !== null)
@@ -79,11 +86,11 @@ async function nextAvailableFilename(dirPath, extension) {
   }
 
   const number = String(counter).padStart(3, '0');
-  return `image-${number}${extension}`;
+  return `${prefix}-${number}${extension}`;
 }
 
 /**
- * Download media dari message dan simpan ke storage/<YYYY-MM-DD>/<activeFolder>/image-NNN.ext
+ * Download media dari message dan simpan ke storage/<YYYY-MM-DD>/<activeFolder>/<image|video>-NNN.ext
  * Return path relatif file yang tersimpan (untuk logging), atau throw error
  * yang harus ditangkap oleh pemanggil (index.js) supaya tidak crash.
  */
@@ -140,8 +147,8 @@ async function saveMessageMedia(message, config, activeFolder) {
   stage = 'STORAGE_PATH_UNAVAILABLE';
   await assertWithinRoot(root, targetDir);
 
-  const extension = extensionFromMimetype(media.mimetype);
-  const filename = await nextAvailableFilename(targetDir, extension);
+  const extension = extensionFromMimetype(media.mimetype, message.type);
+  const filename = await nextAvailableFilename(targetDir, extension, message.type);
   const targetPath = path.join(targetDir, filename);
 
   stage = 'MEDIA_WRITE_FAILED';

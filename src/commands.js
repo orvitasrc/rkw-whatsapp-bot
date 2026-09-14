@@ -1,30 +1,7 @@
 'use strict';
 
-const FOLDER_USAGE = 'Gunakan:\nMAKEFOLDER <nama folder>\n\nContoh:\nMAKEFOLDER Proses Installasi Guard';
-const HELP = `RKW LOCAL STORAGE BOT — COMMANDS
-
-1. MAKEFOLDER <nama folder>
-Menentukan folder tujuan khusus untuk Anda.
-Contoh: MAKEFOLDER Proses Installasi Guard
-
-2. SAVETOSERVER
-Mengaktifkan Save Mode 5 menit. Wajib MAKEFOLDER terlebih dahulu.
-Image Anda disimpan ke folder aktif. Setiap image yang berhasil disimpan memperpanjang timer 5 menit.
-
-3. TIMESAVEMODE
-Menampilkan status, folder dan sisa waktu Anda tanpa memperpanjang timer.
-
-4. STOPSAVE
-Mematikan Save Mode Anda. Folder tetap tersimpan untuk SAVETOSERVER berikutnya.
-
-5. HELP
-Menampilkan panduan ini.
-
-6. BOTSTATUS
-Menampilkan koneksi WhatsApp, jumlah kegagalan media, dan waktu penyimpanan terakhir tanpa mengubah Save Mode.
-
-Semua command hanya berlaku di group ini dan tidak membedakan huruf besar/kecil.
-State folder dan Save Mode direset saat bot restart.`;
+const FOLDER_USAGE = 'Gunakan:\n`MAKEFOLDER <nama folder>`\n\nContoh:\n`MAKEFOLDER Proses Installasi Guard`';
+const HELP = '🤖 *RKW Auto Storage — Commands*\n\n📁 *Folder*\n`MAKEFOLDER <nama folder>`\nMembuat/memilih folder project hari ini.\n\n`LISTFOLDER`\nMenampilkan folder project hari ini.\n\n`RENAMEFOLDER <nama lama> | <nama baru>`\nMengubah nama folder project hari ini.\n\n💾 *Save Mode*\n`SAVETOSERVER`\nMenyimpan foto/video selama 5 menit; wajib punya folder aktif.\n\n`TIMESAVEMODE`\nMelihat sisa waktu tanpa memperpanjang timer.\n\n`STOPSAVE`\nMematikan Save Mode; folder tetap diingat.\n\n🤖 *System*\n`BOTSTATUS`\nMelihat status bot.\n\n`HELP`\nMenampilkan bantuan.\n\n_Setelah media berhasil disimpan, timer diperpanjang 5 menit. Mode berlaku per sender._';
 
 function handleCommand(message, sender, mode, log = () => {}) {
   if (message.type !== 'chat' || message.hasMedia) return null;
@@ -37,25 +14,25 @@ function handleCommand(message, sender, mode, log = () => {}) {
   if (command === 'MAKEFOLDER') {
     try {
       const folder = mode.setFolder(sender, folderMatch[1] || '');
-      return `Folder aktif berhasil diatur:\n${folder}\n\nGunakan SAVETOSERVER untuk mulai menyimpan gambar.`;
-    } catch (err) { return `Format salah. ${err.message}\n${FOLDER_USAGE}`; }
+      return `✅ *Folder aktif berhasil diatur:*\n${folder}\n\nGunakan SAVETOSERVER untuk mulai menyimpan foto/video.`;
+    } catch (err) { return `⚠️ *Format salah.* ${err.message}\n${FOLDER_USAGE}`; }
   }
   if (command === 'SAVETOSERVER') {
-    if (!mode.activate(sender)) return `Save Mode tidak dapat diaktifkan.\nTentukan folder tujuan terlebih dahulu.\n${FOLDER_USAGE}`;
+    if (!mode.activate(sender)) return `⚠️ *Save Mode tidak dapat diaktifkan.*\nTentukan folder tujuan terlebih dahulu.\n${FOLDER_USAGE}`;
     const folder = mode.status(sender).activeFolder;
     log(`Folder: ${folder}`);
-    return `Save Mode aktif selama 5 menit.\nFolder: ${folder}\n\nSetiap image yang berhasil disimpan memperpanjang timer 5 menit.`;
+    return `✅ *Save Mode aktif selama 5 menit.*\nFolder: ${folder}\n\nKirim foto/video yang ingin disimpan ke server.\n\nSetiap media yang berhasil disimpan memperpanjang timer 5 menit.`;
   }
   if (command === 'STOPSAVE') {
     const stopped = mode.stop(sender);
-    return `${stopped ? 'Save Mode berhasil dihentikan.' : 'Save Mode sudah tidak aktif.'}\nFolder tetap aktif:\n${mode.status(sender).activeFolder || 'belum ditentukan'}`;
+    return `${stopped ? '✅ *Save Mode berhasil dihentikan.*' : 'ℹ️ *Save Mode sudah tidak aktif.*'}\nFolder tetap aktif:\n${mode.status(sender).activeFolder || 'belum ditentukan'}`;
   }
   const { activeFolder, remainingMs } = mode.status(sender);
-  if (!activeFolder) return `Save Mode: INACTIVE\nFolder: belum ditentukan\n\n${FOLDER_USAGE}`;
-  if (!remainingMs) return `Save Mode: INACTIVE\nFolder: ${activeFolder}\n\nGunakan SAVETOSERVER untuk mengaktifkannya kembali.`;
+  if (!activeFolder) return `💾 *Save Mode: INACTIVE*\nFolder: belum ditentukan\n\n${FOLDER_USAGE}`;
+  if (!remainingMs) return `💾 *Save Mode: INACTIVE*\nFolder: ${activeFolder}\n\nGunakan SAVETOSERVER untuk mengaktifkannya kembali.`;
   const seconds = Math.ceil(remainingMs / 1000);
   const minutes = Math.floor(seconds / 60);
   log(`Save mode remaining: ${sender} - ${minutes}m ${seconds % 60}s`);
-  return `Save Mode: ACTIVE\nSisa waktu: ${minutes} menit ${seconds % 60} detik\nFolder: ${activeFolder}`;
+  return `💾 *Save Mode: ACTIVE*\n⏱️ Sisa waktu: ${minutes} menit ${seconds % 60} detik\nFolder: ${activeFolder}`;
 }
 module.exports = { handleCommand };

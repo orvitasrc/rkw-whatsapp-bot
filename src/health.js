@@ -1,8 +1,8 @@
 'use strict';
 const { sendText } = require('./outgoing');
 
-const USER_FAILURE = '⚠️ Gambar gagal disimpan ke server.\nSilakan kirim ulang gambar atau hubungi admin jika masalah berlanjut.';
-const ADMIN_WARNING = '⚠️ RKW Storage Bot Warning\n\nMedia gagal disimpan 3 kali berturut-turut.\n\nKemungkinan:\n- perubahan WhatsApp Web\n- session/browser issue\n- storage server bermasalah\n\nSilakan cek bot/server.';
+const USER_FAILURE = '⚠️ *Media gagal disimpan ke server.*\nSilakan kirim ulang foto/video atau hubungi admin jika masalah berlanjut.';
+const ADMIN_WARNING = '⚠️ *RKW Storage Bot Warning*\n\nMedia gagal disimpan 3 kali berturut-turut.\n\nKemungkinan:\n- perubahan WhatsApp Web\n- session/browser issue\n- storage server bermasalah\n\nSilakan cek bot/server.';
 
 function safeText(value) {
   return String(value ?? '').replace(/(?:github_pat_|gh[pousr]_)[A-Za-z0-9_]+/g, '[REDACTED]')
@@ -41,7 +41,7 @@ function createHealth() {
       return false;
     },
     statusText() {
-      return `RKW Storage Bot Status\n\nWhatsApp: ${state.whatsappReady ? 'READY' : 'NOT READY'}\nMedia failures: ${state.consecutiveMediaFailures}\nLast successful save: ${state.lastSuccessfulMediaSaveAt || 'Belum ada'}\nStorage: ${state.lastStorageResult}`;
+      return `🤖 *RKW Storage Bot Status*\n\nWhatsApp: ${state.whatsappReady ? 'READY' : 'NOT READY'}\nMedia failures: ${state.consecutiveMediaFailures}\nLast successful save: ${state.lastSuccessfulMediaSaveAt || 'Belum ada'}\nStorage: ${state.lastStorageResult}`;
     },
   };
 }

@@ -272,3 +272,29 @@ git push origin v1.0-stable
 ```
 
 Pastikan nama tag belum digunakan; jangan force/memindahkan stable tag lama.
+
+
+## Folder management
+
+`LISTFOLDER` membaca hanya direktori project hari ini berdasarkan tanggal lokal server. Nama asli filesystem ditampilkan berurutan; file dan symlink tidak ditampilkan. Folder tanggal yang belum ada adalah hasil kosong, bukan error. Command ini tidak mengubah state atau timer.
+
+`MAKEFOLDER <nama>` kini membuat direktori project hari ini sebelum memilih folder dalam state, sehingga folder langsung muncul di LISTFOLDER tanpa perlu image pertama. Nama yang sama secara case-insensitive memilih nama asli yang sudah ada. Path dengan slash/backslash atau traversal ditolak.
+
+`RENAMEFOLDER <nama lama> | <nama baru>` hanya merename folder project hari ini. Kedua nama disanitasi; path, symlink, lookup ambigu, dan target yang sudah ada ditolak. Rename yang hanya beda kapitalisasi juga ditolak supaya aman lintas Mac/Windows. File/subfolder ikut dipertahankan. Seluruh state sender yang menunjuk folder lama diperbarui, termasuk sender lain, tetapi expiry/session Save Mode tidak berubah. Folder tanggal sebelumnya tidak direname.
+
+Operasi folder diantrikan bersama penyimpanan media dalam satu instance. Image yang masih menunggu dengan tujuan hari ini ikut diarahkan ke nama baru; image yang sudah diproses selesai dahulu. Jangan mengubah direktori storage secara bersamaan dari proses eksternal ketika rename bot berlangsung. Format path storage tetap tanggal/project/image-NNN.ext. Tidak ada perubahan pada media workaround atau pengiriman outgoing.
+
+Validasi nyata: LISTFOLDER → MAKEFOLDER Rename Folder Test → LISTFOLDER → RENAMEFOLDER Rename Folder Test | Rename Folder Final → LISTFOLDER → SAVETOSERVER → satu image → TIMESAVEMODE → STOPSAVE → HELP. Real test folder dan formatting telah dikonfirmasi berhasil oleh pengguna; fitur disertakan dalam v1.3-stable.
+
+Untuk update Windows dari v1.1 ke versi baru setelah disetujui: hentikan service dengan aman, cadangkan source versi lama, ganti hanya source/test/docs/package-lock dari paket versi baru, pertahankan .env/session/storage Windows, jalankan npm ci bila dependency perlu dipasang, lalu start satu service dan tes command serta media. Jangan gunakan sinkronisasi yang menghapus file runtime; tidak ada deployment Windows dari task DEV ini.
+
+
+### Dukungan foto dan video
+
+SAVETOSERVER menerima media image dan video untuk sender dengan Save Mode aktif. Document, audio, dan sticker tetap diabaikan. Video memakai jalur download, workaround ID, antrean folder, validasi file, dan reliability yang sama dengan image. Timer 5 menit hanya diperpanjang setelah file berhasil ditulis dan ukuran diverifikasi; kegagalan video ikut counter dan warning media bersama.
+
+Penomoran terpisah dalam folder tanggal/project: image-001.jpg dan video-001.mp4; file existing tidak ditimpa. MIME video/mp4 → .mp4, video/3gpp → .3gp, video/quicktime → .mov, video/webm → .webm. MIME video tidak dikenal disimpan sebagai .bin agar tidak mengklaim format tertentu. Bytes asli disimpan tanpa konversi.
+
+Download masih memuat seluruh base64 dan Buffer hasil decode ke memory. Video besar meningkatkan pemakaian RAM; error library ditangani sebagai failure, tetapi kehabisan RAM pada level proses/OS tetap dapat menghentikan bot. Tidak ada limit baru atau streaming. Log sukses memuat tipe dan ukuran bytes.
+
+Real test DEV: MAKEFOLDER Video Test → SAVETOSERVER → satu foto → satu video pendek → TIMESAVEMODE → BOTSTATUS → STOPSAVE; periksa HELP. Real test DEV telah dikonfirmasi berhasil oleh pengguna untuk rilis v1.3-stable.

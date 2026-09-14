@@ -33,6 +33,12 @@ function createSaveMode({ now = Date.now, log = () => {} } = {}) {
   }
   return {
     expire, status,
+    renameFolderReferences(oldName, newName) {
+      const key = value => value.normalize('NFC').toLowerCase();
+      for (const state of states.values()) {
+        if (state.activeFolder && key(state.activeFolder) === key(oldName)) state.activeFolder = newName;
+      }
+    },
     setFolder(sender, name) {
       const activeFolder = sanitizeFolder(name);
       const state = states.get(sender) || { expiresAt: 0, session: {} };
